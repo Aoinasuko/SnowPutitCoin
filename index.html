@@ -440,7 +440,58 @@
                 }
             };
 
-            return { connectWallet, mintToken, adminMint, createGift, testGenerate, toggleMinting, setMetadata, handleFileUpload, isConnected, isOwner, isMintingOpen, userBalance, userMintAmount, adminMintAmount, giftAmount, testAmount, newMetadataURI, currentMetadataURI, generatedGiftUrl, cardImageUrl, isTestMode, uploadedImageSrc, isLoading, errorMessage, successMessage, shortAddress };
+            const signAgreement = async () => {
+                // 1. 基本チェック
+                if (!isConnected.value) {
+                    alert("エラー：ウォレットが接続されていません");
+                    return;
+                }
+
+                // 2. 処理中フラグをON
+                isLoading.value = true;
+                errorMessage.value = "";
+                successMessage.value = "";
+
+                try {
+                    // 3. 準備（プロバイダーと署名者の取得）
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner();
+                    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+                    console.log("規約同意トランザクションを開始します...");
+
+                    // 4. コントラクトの関数を実行
+                    const tx = await contract.acceptTerms();
+                    
+                    successMessage.value = "送信完了！ブロックチェーンの承認を待っています...";
+                    
+                    // 5. 完了待ち
+                    await tx.wait();
+
+                    // 6. 成功時の処理
+                    successMessage.value = "規約に同意しました！";
+                    hasAgreed.value = true; // 画面の表示を切り替える
+                    
+                    // データを最新に更新
+                    await refreshData(signer);
+
+                } catch (error) {
+                    console.error(error);
+                    // エラーメッセージの振り分け
+                    if (error.code === 'ACTION_REJECTED') {
+                        errorMessage.value = "MetaMaskで拒否されました。";
+                    } else if (error.message && error.message.includes("insufficient funds")) {
+                        errorMessage.value = "ガス代(ETH)が足りません。";
+                    } else {
+                        errorMessage.value = "エラーが発生しました: " + (error.reason || error.message);
+                    }
+                } finally {
+                    // 7. 処理中フラグをOFF
+                    isLoading.value = false;
+                }
+            };
+
+            return { connectWallet, mintToken, adminMint, createGift, testGenerate, toggleMinting, setMetadata, handleFileUpload, signAgreement, isConnected, isOwner, isMintingOpen, userBalance, userMintAmount, adminMintAmount, giftAmount, testAmount, newMetadataURI, currentMetadataURI, generatedGiftUrl, cardImageUrl, isTestMode, uploadedImageSrc, isLoading, errorMessage, successMessage, shortAddress, hasAgreed };
         }
     }).mount('#app');
 </script>
