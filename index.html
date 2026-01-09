@@ -69,6 +69,14 @@
             <button @click="signAgreement" :disabled="isLoading">規約に同意して利用開始</button>
         </div>
 
+        <div class="metamask-zone">
+            <h3 style="color:#f39c12; margin-top:0;">雪プチコインをインポート</h3>
+            <p style="font-size:0.9rem;">
+                雪プチコインをウォレット一覧にインポートし、アイコンが表示されるようにします。
+            </p>
+            <button @click="addToMetaMask" style="background-color:#f39c12;" :disabled="!tokenImageUrl">インポートする</button>
+        </div>
+
         <div class="design-zone">
             <h3>🎨 ギフトカードのデザイン設定</h3>
             <p style="font-size:0.9rem;">好きな画像を背景に設定できます (横長推奨)</p>
@@ -469,6 +477,30 @@
                 cardImageUrl.value = canvas.toDataURL("image/png");
             };
 
+            // ★MetaMaskにトークンを追加する関数
+            const addToMetaMask = async () => {
+
+                try {
+                    // プロバイダを通してリクエスト
+                    await window.ethereum.request({
+                        method: 'wallet_watchAsset',
+                        params: {
+                            type: 'ERC20',
+                            options: {
+                                address: CONTRACT_ADDRESS,
+                                symbol: 'YKPUTI',
+                                decimals: 18,
+                                image: 'https://black-holy-cod-224.mypinata.cloud/ipfs/bafybeigtecms2jewnu3t6hbej6yxyqitc6lcoxics4izubmjqebcsv6v6q',
+                            },
+                        },
+                    });
+                    successMessage.value = "インポートリクエストを送りました！";
+                } catch (error) {
+                    console.error(error);
+                    errorMessage.value = "インポートに失敗しました: " + error.message;
+                }
+            };
+
             return { 
                 connectWallet, 
                 signAgreement, 
@@ -479,6 +511,7 @@
                 toggleMinting, 
                 setMetadata, 
                 handleFileUpload, 
+                addToMetaMask,
                 isConnected, 
                 isOwner, 
                 isMintingOpen, 
