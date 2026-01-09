@@ -159,12 +159,15 @@
 
     createApp({
         setup() {
-            // ★デプロイしたコントラクトアドレス
-            const CONTRACT_ADDRESS = "0x8515eedfD088A4e91768269133abd251A3fE64d0";
+            // ============================================
+            // ★設定: デプロイしたコントラクトアドレス
+            // ============================================
+            const CONTRACT_ADDRESS = "0xYOUR_CONTRACT_ADDRESS_HERE";
             
-            // ★受取ページURL
+            // 受取ページのURL自動取得 (index.html と同じ場所の gift.html)
             const BASE_GIFT_URL = window.location.href.replace('index.html', '') + "gift.html";
 
+            // ABI定義
             const ABI = [
                 "function isMintingEnabled() view returns (bool)",
                 "function mint(uint256 amount) external", 
@@ -177,13 +180,16 @@
                 "function totalLifetimeSupply() view returns (uint256)",
                 "function contractMetadataURI() view returns (string)",
                 "function setContractMetadataURI(string) external",
-                "function hasAgreedToTerms(address) view returns (bool)"
+                "function hasAgreedToTerms(address) view returns (bool)", // 追加
+                "function acceptTerms() external" // 追加
             ];
 
+            // ステート変数
             const walletAddress = ref("");
             const isConnected = ref(false);
             const isOwner = ref(false);
             const isMintingOpen = ref(false);
+            const hasAgreed = ref(false); // 規約同意フラグ
             const userBalance = ref("0");
             
             const userMintAmount = ref("");
@@ -203,34 +209,37 @@
             const errorMessage = ref("");
             const successMessage = ref("");
 
-            const hasAgreed = ref(false);
-
             const shortAddress = computed(() => walletAddress.value ? walletAddress.value.slice(0,6) + "..." + walletAddress.value.slice(-4) : "");
 
+            // ウォレット接続
             const connectWallet = async () => {
-                if (!window.ethereum) return alert("MetaMask等が必要です");
-                const provider = new ethers.BrowserProvider(window.ethereum);
-                const signer = await provider.getSigner();
-                walletAddress.value = await signer.getAddress();
-
-                const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-                hasAgreed.value = await contract.hasAgreedToTerms(walletAddress.value);
-
-                isConnected.value = true;
-                refreshData(signer);
+                errorMessage.value = "";
+                if (!window.ethereum) return errorMessage.value = "MetaMaskがインストールされていません";
+                try {
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner();
+                    walletAddress.value = await signer.getAddress();
+                    isConnected.value = true;
+                    await refreshData(signer);
+                } catch (e) { errorMessage.value = e.message; }
             };
 
+            // データ更新
             const refreshData = async (signer) => {
-                const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-                isMintingOpen.value = await contract.isMintingEnabled();
-                const ownerAddr = await contract.owner();
-                isOwner.value = (ownerAddr.toLowerCase() === walletAddress.value.toLowerCase());
-                const bal = await contract.balanceOf(walletAddress.value);
-                const dec = await contract.decimals();
-                userBalance.value = ethers.formatUnits(bal, dec);
-                currentMetadataURI.value = await contract.contractMetadataURI();
+                try {
+                    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+                    isMintingOpen.value = await contract.isMintingEnabled();
+                    const ownerAddr = await contract.owner();
+                    isOwner.value = (ownerAddr.toLowerCase() === walletAddress.value.toLowerCase());
+                    const bal = await contract.balanceOf(walletAddress.value);
+                    const dec = await contract.decimals();
+                    userBalance.value = ethers.formatUnits(bal, dec);
+                    hasAgreed.value = await contract.hasAgreedToTerms(walletAddress.value);
+                    currentMetadataURI.value = await contract.contractMetadataURI();
+                } catch (e) { console.error(e); }
             };
 
+            // 画像アップロード処理
             const handleFileUpload = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
@@ -239,15 +248,53 @@
                 reader.readAsDataURL(file);
             };
 
+            // トランザクション共通処理
+            const sendTx = async (action, msg) => {
+                isLoading.value = true; errorMessage.value = ""; successMessage.value = "";
+                try {
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner();
+                    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+                    
+                    // decimalsが必要な場合があるため取得しておく
+                    let decimals = 18;
+                    try { decimals = await contract.decimals(); } catch(e){}
+
+                    const tx = await action(contract, decimals);
+                    await tx.wait();
+                    successMessage.value = msg;
+                    await refreshData(signer);
+                } catch (e) {
+                    console.error(e);
+                    if (e.code === 'ACTION_REJECTED') {
+                        errorMessage.value = "MetaMaskで拒否されました。";
+                    } else if (e.message && e.message.includes("insufficient funds")) {
+                        errorMessage.value = "ガス代(ETH)が足りません。";
+                    } else {
+                        errorMessage.value = "エラー: " + (e.reason || e.message);
+                    }
+                } finally {
+                    isLoading.value = false;
+                }
+            };
+
+            // ★規約同意処理
+            const signAgreement = async () => {
+                await sendTx(async (c) => await c.acceptTerms(), "規約に同意しました！");
+            };
+
+            // 発行ON/OFF
             const toggleMinting = async (status) => {
                 await sendTx(async (c) => await c.toggleMinting(status), "設定を変更しました");
             };
 
+            // メタデータ設定
             const setMetadata = async () => {
                 await sendTx(async (c) => await c.setContractMetadataURI(newMetadataURI.value), "メタデータURIを保存しました！");
                 newMetadataURI.value = ""; 
             };
 
+            // 一般ユーザー発行
             const mintToken = async () => {
                 if(userMintAmount.value > 100) return alert("1回につき100枚までです");
                 await sendTx(async (c, decimals) => {
@@ -256,6 +303,7 @@
                 }, `${userMintAmount.value}枚 発行しました！`);
             };
 
+            // 管理者発行
             const adminMint = async () => {
                 await sendTx(async (c, decimals) => {
                     const amt = ethers.parseUnits(adminMintAmount.value, decimals);
@@ -421,77 +469,36 @@
                 cardImageUrl.value = canvas.toDataURL("image/png");
             };
 
-            const sendTx = async (action, msg) => {
-                isLoading.value = true; errorMessage.value = ""; successMessage.value = "";
-                try {
-                    const provider = new ethers.BrowserProvider(window.ethereum);
-                    const signer = await provider.getSigner();
-                    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-                    const decimals = await contract.decimals();
-                    const tx = await action(contract, decimals);
-                    await tx.wait();
-                    successMessage.value = msg;
-                    refreshData(signer);
-                } catch (e) {
-                    console.error(e);
-                    errorMessage.value = "エラー: " + (e.reason || e.message);
-                } finally {
-                    isLoading.value = false;
-                }
+            return { 
+                connectWallet, 
+                signAgreement, 
+                mintToken, 
+                adminMint, 
+                createGift, 
+                testGenerate, 
+                toggleMinting, 
+                setMetadata, 
+                handleFileUpload, 
+                isConnected, 
+                isOwner, 
+                isMintingOpen, 
+                hasAgreed,
+                userBalance, 
+                userMintAmount, 
+                adminMintAmount, 
+                giftAmount, 
+                testAmount, 
+                newMetadataURI, 
+                currentMetadataURI, 
+                generatedGiftUrl, 
+                cardImageUrl, 
+                isTestMode, 
+                uploadedImageSrc, 
+                isLoading, 
+                errorMessage, 
+                successMessage, 
+                shortAddress 
             };
-
-            const signAgreement = async () => {
-                // 1. 基本チェック
-                if (!isConnected.value) {
-                    alert("エラー：ウォレットが接続されていません");
-                    return;
-                }
-
-                // 2. 処理中フラグをON
-                isLoading.value = true;
-                errorMessage.value = "";
-                successMessage.value = "";
-
-                try {
-                    // 3. 準備（プロバイダーと署名者の取得）
-                    const provider = new ethers.BrowserProvider(window.ethereum);
-                    const signer = await provider.getSigner();
-                    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-
-                    console.log("規約同意トランザクションを開始します...");
-
-                    // 4. コントラクトの関数を実行
-                    const tx = await contract.acceptTerms();
-                    
-                    successMessage.value = "送信完了！ブロックチェーンの承認を待っています...";
-                    
-                    // 5. 完了待ち
-                    await tx.wait();
-
-                    // 6. 成功時の処理
-                    successMessage.value = "規約に同意しました！";
-                    hasAgreed.value = true; // 画面の表示を切り替える
-                    
-                    // データを最新に更新
-                    await refreshData(signer);
-
-                } catch (error) {
-                    console.error(error);
-                    // エラーメッセージの振り分け
-                    if (error.code === 'ACTION_REJECTED') {
-                        errorMessage.value = "MetaMaskで拒否されました。";
-                    } else if (error.message && error.message.includes("insufficient funds")) {
-                        errorMessage.value = "ガス代(ETH)が足りません。";
-                    } else {
-                        errorMessage.value = "エラーが発生しました: " + (error.reason || error.message);
-                    }
-                } finally {
-                    // 7. 処理中フラグをOFF
-                    isLoading.value = false;
-                }
-            };
-
-            return { connectWallet, mintToken, adminMint, createGift, testGenerate, toggleMinting, setMetadata, handleFileUpload, signAgreement, isConnected, isOwner, isMintingOpen, userBalance, userMintAmount, adminMintAmount, giftAmount, testAmount, newMetadataURI, currentMetadataURI, generatedGiftUrl, cardImageUrl, isTestMode, uploadedImageSrc, isLoading, errorMessage, successMessage, shortAddress, hasAgreed };
         }
     }).mount('#app');
 </script>
