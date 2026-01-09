@@ -320,7 +320,10 @@
             };
 
             // ★変更点: 引数に giftId を追加
-            const generateCardImage = (amount, startSerial, endSerial, giftId) => {
+            // ---------------------------------------------------------
+            // 修正箇所 1: canvas を引数として渡すように変更
+            // ---------------------------------------------------------
+            const generateCardImage = (amount, startSerial, endSerial, giftId = "") => {
                 const canvas = document.createElement('canvas');
                 const width = 800;
                 const height = 480;
@@ -333,15 +336,19 @@
                 
                 if (uploadedImageSrc.value) {
                     bgImg.src = uploadedImageSrc.value;
-                    bgImg.onload = () => { drawCanvasContent(ctx, bgImg, width, height, amount, startSerial, endSerial, giftId); };
-                    bgImg.onerror = () => { drawCanvasContent(ctx, null, width, height, amount, startSerial, endSerial, giftId); };
+                    // ★修正: drawCanvasContent の第1引数に canvas を追加
+                    bgImg.onload = () => { drawCanvasContent(canvas, ctx, bgImg, width, height, amount, startSerial, endSerial, giftId); };
+                    bgImg.onerror = () => { drawCanvasContent(canvas, ctx, null, width, height, amount, startSerial, endSerial, giftId); };
                 } else {
-                    drawCanvasContent(ctx, null, width, height, amount, startSerial, endSerial, giftId);
+                    // ★修正: drawCanvasContent の第1引数に canvas を追加
+                    drawCanvasContent(canvas, ctx, null, width, height, amount, startSerial, endSerial, giftId);
                 }
             };
 
-            // ★変更点: 引数に giftId を追加
-            const drawCanvasContent = (ctx, bgImg, w, h, amount, startSerial, endSerial, giftId) => {
+            // ---------------------------------------------------------
+            // 修正箇所 2: 引数で canvas を受け取るように変更
+            // ---------------------------------------------------------
+            const drawCanvasContent = (canvas, ctx, bgImg, w, h, amount, startSerial, endSerial, giftId) => {
                 if (bgImg) {
                     ctx.drawImage(bgImg, 0, 0, w, h);
                 } else {
@@ -375,7 +382,7 @@
                 
                 ctx.font = "bold 30px Helvetica";
                 ctx.fillStyle = "#666";
-                ctx.fillText("雪プチコイン", 70, 100);
+                ctx.fillText("Yuki Puti Coin", 70, 100);
 
                 ctx.fillStyle = "#00a8ff";
                 ctx.font = "bold 100px Helvetica";
@@ -395,7 +402,7 @@
                 ctx.textAlign = "left"; 
                 ctx.font = "20px Helvetica";
                 ctx.fillStyle = "#555";
-                ctx.fillText("雪プチで感謝を送ります！", 70, 320); 
+                ctx.fillText("Snowy Gift for You!", 70, 320); 
 
                 const qrContainer = document.getElementById("qrcode-container");
                 const qrImgElement = qrContainer.querySelector("img");
@@ -403,13 +410,15 @@
                     ctx.drawImage(qrImgElement, 540, 140, 200, 200);
                 }
 
-                // ★追加: ギフトIDをQRコードの下に印字
-                ctx.font = "12px Courier New"; // 等幅フォント
-                ctx.fillStyle = "#666";
-                ctx.textAlign = "center";
-                // 右パネルの中心(520 + 240/2 = 640)に配置
-                ctx.fillText("ID: " + giftId, 640, 380); 
+                // ギフトID印字
+                if (giftId) {
+                    ctx.font = "12px Courier New";
+                    ctx.fillStyle = "#666";
+                    ctx.textAlign = "center";
+                    ctx.fillText("ID: " + giftId, 640, 380);
+                }
 
+                // ★ここで canvas を使うため、引数で受け取る必要がありました
                 cardImageUrl.value = canvas.toDataURL("image/png");
             };
 
