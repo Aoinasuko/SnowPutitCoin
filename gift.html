@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ギフト受取</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+    
+    <style>
+        body { font-family: sans-serif; background-color: #ffeaa7; color: #333; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .card { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        h1 { color: #e17055; }
+        .gift-icon { font-size: 4rem; margin-bottom: 10px; }
+        button { background-color: #e17055; color: white; border: none; padding: 15px; width: 100%; border-radius: 30px; font-size: 1.1rem; font-weight: bold; cursor: pointer; }
+        button:disabled { background-color: #ccc; }
+        .message { margin-top: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="card">
+    <div class="gift-icon">🎁</div>
+    <h1>ギフトを受け取る</h1>
+
+    <div v-if="!giftCode">
+        <p>無効なギフトURLです。<br>QRコードを読み直してください。</p>
+    </div>
+
+    <div v-else>
+        <p v-if="!isConnected">
+            ウォレットを接続して<br>トークンを受け取りましょう。
+        </p>
+        
+        <div v-if="!isConnected">
+            <button @click="connectWallet">MetaMaskを接続</button>
+        </div>
+
+        <div v-else>
+            <p>接続中: {{ shortAddress }}</p>
+            <div v-if="!hasAgreed" style="background:#fff0f0; padding:10px; border-radius:5px; margin-bottom:10px;">
+                <p style="color:red; font-size:0.9rem; margin:0;">
+                    ※未登録のアドレスです。
+                </p>
+                <a href="terms.html" target="_blank" style="font-size:0.9rem; color:#00a8ff;">利用規約</a>を確認の上、ボタンを押してください。
+            </div>
+            <button @click="claimGift" :disabled="isLoading">
+                {{ isLoading ? '処理中...' : (hasAgreed ? 'プレゼントを受け取る' : '規約に同意して受け取る') }}
+            </button>
+        </div>
+
+        <p class="message" :style="{color: isError ? 'red' : 'green'}">{{ statusMessage }}</p>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, computed, onMounted } = Vue;
+
+    createApp({
+        setup() {
+            // ★コントラクトアドレス
+            const CONTRACT_ADDRESS = "0xYOUR_CONTRACT_ADDRESS";
+
+            const ABI = [
+                "function claimGift(string) external",
+                "function hasAgreedToTerms(address) view returns (bool)",
+                "function acceptTerms() external"
+            ];
+
+            const giftCode = ref("");
+            const walletAddress = ref("");
+            const isConnected = ref(false);
+            const hasAgreed = ref(false);
+            const isLoading = ref(false);
+            const statusMessage = ref("");
+            const isError = ref(false);
+
+            const shortAddress = computed(() => walletAddress.value.slice(0,6) + "..." + walletAddress.value.slice(-4));
+
+            onMounted(() => {
+                const params = new URLSearchParams(window.location.search);
+                giftCode.value = params.get("code");
+            });
+
+            const connectWallet = async () => {
+                if (!window.ethereum) return alert("MetaMask等が必要です");
+                try {
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner();
+                    walletAddress.value = await signer.getAddress();
+                    
+                    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+                    hasAgreed.value = await contract.hasAgreedToTerms(walletAddress.value);
+                    
+                    isConnected.value = true;
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+
+            const claimGift = async () => {
+                isLoading.value = true;
+                statusMessage.value = "";
+                isError.value = false;
+
+                try {
+                    const provider = new ethers.BrowserProvider(window.ethereum);
+                    const signer = await provider.getSigner();
+                    const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+
+                    if (!hasAgreed.value) {
+                        const txAgree = await contract.acceptTerms();
+                        statusMessage.value = "規約に同意中...";
+                        await txAgree.wait();
+                        hasAgreed.value = true;
+                    }
+
+                    const tx = await contract.claimGift(giftCode.value);
+                    statusMessage.value = "ブロックチェーンに書き込み中...";
+                    await tx.wait();
+
+                    statusMessage.value = "🎉 受取完了！ウォレットを確認してください。";
+                    isError.value = false;
+                } catch (e) {
+                    console.error(e);
+                    isError.value = true;
+                    if (e.message.includes("Invalid gift")) {
+                        statusMessage.value = "このギフトは既に受け取られているか、無効です。";
+                    } else {
+                        statusMessage.value = "エラー: " + (e.reason || "受取に失敗しました");
+                    }
+                } finally {
+                    isLoading.value = false;
+                }
+            };
+
+            return { giftCode, connectWallet, claimGift, isConnected, hasAgreed, shortAddress, isLoading, statusMessage, isError };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
