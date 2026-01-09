@@ -203,6 +203,8 @@
             const errorMessage = ref("");
             const successMessage = ref("");
 
+            const hasAgreed = ref(false);
+
             const shortAddress = computed(() => walletAddress.value ? walletAddress.value.slice(0,6) + "..." + walletAddress.value.slice(-4) : "");
 
             const connectWallet = async () => {
