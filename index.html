@@ -390,15 +390,23 @@
 
                 const bgImg = new Image();
                 bgImg.crossOrigin = "Anonymous";
-                
+
+                // イベントリスナーを先に定義
+                bgImg.onload = () => {
+                    drawCanvasContent(canvas, ctx, bgImg, width, height, amount, startSerial, endSerial, giftId);
+                };
+
+                // エラー時（CardBase.pngが無い場合など）はnullを渡してグラデーション描画へ
+                bgImg.onerror = () => {
+                    drawCanvasContent(canvas, ctx, null, width, height, amount, startSerial, endSerial, giftId);
+                };
+
+                // ソースの分岐
                 if (uploadedImageSrc.value) {
                     bgImg.src = uploadedImageSrc.value;
-                    // ★修正: drawCanvasContent の第1引数に canvas を追加
-                    bgImg.onload = () => { drawCanvasContent(canvas, ctx, bgImg, width, height, amount, startSerial, endSerial, giftId); };
-                    bgImg.onerror = () => { drawCanvasContent(canvas, ctx, null, width, height, amount, startSerial, endSerial, giftId); };
                 } else {
-                    // ★修正: drawCanvasContent の第1引数に canvas を追加
-                    drawCanvasContent(canvas, ctx, null, width, height, amount, startSerial, endSerial, giftId);
+                    // アップロード画像がない場合はデフォルト画像を読み込む
+                    bgImg.src = "./CardBase.png";
                 }
             };
 
@@ -409,11 +417,7 @@
                 if (bgImg) {
                     ctx.drawImage(bgImg, 0, 0, w, h);
                 } else {
-                    const grd = ctx.createLinearGradient(0, 0, w, h);
-                    grd.addColorStop(0, "#a0e6ff"); 
-                    grd.addColorStop(1, "#74b9ff");
-                    ctx.fillStyle = grd;
-                    ctx.fillRect(0, 0, w, h);
+                    ctx.drawImage(bgImg, 0, 0, w, h);
                 }
 
                 if (isTestMode.value) {
